@@ -1,3 +1,2 @@
-node_modules
-.eslintrc.json
-.env
+[core]
+	excludesfile = /etc/.gitignore-global
