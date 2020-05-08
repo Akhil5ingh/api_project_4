@@ -1,26 +1,13 @@
-'use strict';
-
-// require('dotenv').load();
-
 const express = require('express')
 const app = express()
 const bodyParser = require('body-parser')
+app.use(bodyParser.json()); // support json encoded bodies
+app.use(bodyParser.urlencoded({ extended: true })); // support encoded bodies
 
 const cors = require('cors')
 
 const mongoose = require('mongoose')
-
-mongoose.connect(process.env.MONGOLAB_URI,
-  {useNewUrlParser: true},
-  function(error){
-    if(error) console.log(error);
-    console.log("connection successful");
-});
-mongoose.Promise = global.Promise;
-var db = mongoose.connection;
-db.on('error', console.error.bind(console, 'MongoDB connection error:'));
-
-
+mongoose.connect(process.env.MLAB_URI)
 
 app.use(cors())
 
@@ -34,167 +21,167 @@ app.get('/', (req, res) => {
 });
 
 
+const User = require('./models/user');
+const Exercise = require('./models/exercise');
 
 
-const listener = app.listen(process.env.PORT || 3000, () => {
-  console.log('Your app is listening on port ' + listener.address().port)
-})
 
-// My code
-var User = require('./models/user');
-
-// To clean records
-// User.deleteMany({}, function(err, users) {
-//   if (err) throw err;
-//   console.log('User: Remove old records');
-// });
-
-// Find records
-var findUsername = function(res,name){
-  User.find({"username": name}, (err,data)=>{
-    if (err) { return console.log("Error: find user name")}
-    if (data.length===0){
-      newIdAndCreate(res,name)
-    } else {
-      console.log("Find old record, id: ",data[0]["_id"])
-      res.send('username already taken')
-    }
-  })
-}
-
-var newIdAndCreate = function(res,name){
-  User.countDocuments({}, function(err, count) {
-    if (err) { return console.log("Error: coundDocuments") }
-    var id = ('0000'+(count+1)).slice(-5)
-    console.log('New id: ', id)
-    createAndSaveUser(name,id)
-    res.json({
-      "username": name,
-      "_id": id
-    });
-  });
-}
-
-var createAndSaveUser = function(name,id){
-  var newUser = new User({
-    "username": name,
-    "_id": id
-  });
-  newUser.save(function(err){
-    if (err) { return console.log("Error: save user")};
-    console.log('New user created, id: ',id)
-    return
-  });
-};
-
-// For adding exercise
-var findUserId = function(req,res){
-  User.find({"_id": req.body.userId}, (err,data)=>{
-    if (err) { return console.log("Error: find user name")}
-    if (data.length===0){
-      res.send('unknown _id')
-    } else {
-      pushExer(req,res,data)
-    }
-  })
-}
-
-var pushExer = function(req,res,data){
-  var id= req.body.userId;
-  var description= req.body.description;
-  var duration= req.body.duration;
-
-  if (description=='') { return res.send('Path `description` is required.')}
-  if (duration=='') { return res.send('Path `duration` is required.')}
-  if (parseInt(duration).toString()!=duration) {
-    console.log(duration, parseInt(duration).toString())
-    return res.send('Cast to Number failed for value "'+duration+'" at path "duration"')
-  }
-
-  if (req.body.date==''){
-    var date = new Date();
+//create new user 
+app.post("/api/exercise/new-user", function(req,res,next){
+  
+  var username = req.body.username;
+  if (username==="") {
+    res.json({"error":"username cannot be empty"});
+  } else if (username.length>10) {
+    res.json({"error":"username should be greater than 10 characters long"});
   } else {
-    var date = new Date(req.body.date);
-    if (date.getTime() !== date.getTime()){
-      return res.send('Cast to Date failed for value " '+req.body.date+'" at path "date"')
-    }
-    console.log(date)
+   
+    const newUser = new User({
+      username
+    });
+
+    newUser.save((err, data) => {
+      if (err) {
+        if (err.name === 'MongoError' && err.code === 11000) { 
+          res.json({"error":"username already exists"});
+        } else {
+          res.json({"error":"error while saving"});
+        }
+      } else {
+        res.json({"username":data.username,"id":data._id});
+      }
+    }); 
+   
   }
-
-  var exerData = {
-    "description":description,
-    "duration":   parseInt(duration),
-    "date":       date}
-
-  console.log(exerData)
-
-  var returnData = {
-    "username":   data[0]['username'],
-    "description":description,
-    "duration":   parseInt(duration),
-    "_id":        id,
-    "date":       date.toString().slice(0,15)}
-
-  console.log(returnData)
-
-  User.updateOne({"_id":id},{$push:{"exercise":exerData}},(err)=>{
-    if (err) { return console.log(err,"Error: save exercise")};
-    console.log('New exer created')
-    res.json(returnData);
-  });
-};
-
-app.post('/api/exercise/new-user',(req,res)=>{
-  var name= req.body.username;
-  findUsername(res,name)
+  
 });
 
-app.post('/api/exercise/add',(req,res)=>{
-  findUserId(req,res)
-});
 
-app.get('/api/exercise/log',(req,res)=>{
-  var id = req.query.userId
-  User.find({'_id':id},(err,data)=>{
-    if (err) { return console.log(err,'Error:find records from query')}
-    var result = {
-      "_id": data[0]["_id"],
-      "username": data[0]["username"]
-    }
-    var log = data[0]["exercise"]
-    if (req.query.from!=undefined){
-      var from = new Date(req.query.from)
-      result["from"]=from.toString().slice(0,15)
-      log = log.filter((x) => x['date'] > from)
-    };
-    if (req.query.to!=undefined){
-      var to = new Date(req.query.to)
-      result["to"]=to.toString().slice(0,15)
-      log = log.filter((x) => x['date'] < to)
-    };
-    if (req.query.limit!=undefined){
-      var limit = req.query.limit
-      if (log.length > limit){
-        log = log.slice(0,limit)
+
+//create new exercise
+app.post("/api/exercise/add", function(req,res,next){
+  var username = req.body.username;
+  var description = req.body.description;
+  var duration = req.body.duration;
+  var date = req.body.date;
+  var userId;
+
+  if (username === "" || description === "" || duration === "") {
+    res.json({"error":"Required Field(s) missing."});
+  }else if (username.length > 10) {
+    res.json({"error":"username should not be greater than 10 characters long"});
+  } else if (description.length > 100) {
+    res.json({"error":"Description cannot be greater than 100 characters"});
+  } else if (isNaN(duration)) {
+    res.json({"error":"Duration must be a number"});
+  } else if (date !== '' && isNaN(Date.parse(date)) === true) {
+    res.json({"error":"Invalid date"});
+  } else {
+      
+    User.findOne({ username }, (err, user) => {
+      if (err) {
+        res.json({"error":"error while searching"});
+      } else if (!user) {
+        res.json({"error":"username not found"});
+      } else {
+        userId = user.id;
+        duration = Number(duration);
+        if (date === '') {
+          date = new Date();
+        } else {
+          date = Date.parse(date);
+        }
+
+        const newExercise = new Exercise({
+          userId,
+          description,
+          duration,
+          date,
+        });
+
+        newExercise.save((errSave, data) => {
+          if (errSave) {
+            res.json({"error":"error while saving"});
+          } else {
+            res.json({"username":username,"userId":data._id,"description":data.description,"duration":data.duration,"date":data.date});
+          }
+        });
       }
-    };
-    result["count"] = log.length;
-    log = log.map((x)=>{
-      return {
-        "description": x["description"],
-        "duration": x["duration"],
-        "date": x["date"].toString().slice(0,15)
-      }
-    })
-    result['log'] = log;
-    res.json(result)
-  })
+    });
+    
+  }
+  
+  
 });
 
 
-// End of my own code
 
-// Error handling
+
+
+// Read Exercise 
+app.get('/api/exercise/:log', (req, res) => {
+  const username = req.query.username;
+  let from = req.query.from;
+  let to = req.query.to;
+  let limit = req.query.limit;
+  let userId;
+  const query = {};
+
+
+  if (username === undefined) {
+    res.json({"error":"Required Field(s) missing."});
+  } else if (username.length > 10) {
+    res.json({"error":"username should be greater than 10 characters long"});
+  } else if (from !== undefined && isNaN(Date.parse(from)) === true) {
+    res.json({"error":"Invalid date"});
+  } else if (to !== undefined && isNaN(Date.parse(to)) === true) {
+    res.json({"error":"Invalid date"});
+  } else if (limit !== undefined && (isNaN(limit)||Number(limit) < 1)=== true) {
+    res.json({"error":"invalid limit"});
+  } else {
+    
+    User.findOne({ username }, (err, user) => {
+      if (err) {
+        res.json({"error":"error while searching"});
+      } else if (!user) {
+        res.json({"error":"username not found"});
+      } else {
+        userId = user.id;
+        query.userId = userId;
+
+        if (from !== undefined) {
+          from = new Date(from);
+          query.date = { $gte: from};
+        }
+
+        if (to !== undefined) {
+          to = new Date(to);
+          to.setDate(to.getDate() + 1); // Add 1 day to include date
+          query.date = { $lt: to};
+        }
+
+        if (limit !== undefined) {
+          limit = Number(limit);
+        }
+
+        Exercise.find(query).select('userId description date duration ').limit(limit).exec((errExercise, exercises) => {
+          if (err) {
+             res.json({"error":"error while searching"});
+          } else if (!user) {
+            res.json({"error":"exercises not found"});
+          } else {
+            res.json(exercises);
+          }
+        });
+      }
+    });
+    
+  }
+});
+
+
+
+
 
 // Not found middleware
 app.use((req, res, next) => {
@@ -218,4 +205,10 @@ app.use((err, req, res, next) => {
   }
   res.status(errCode).type('txt')
     .send(errMessage)
+})
+
+
+
+const listener = app.listen(process.env.PORT || 3000, () => {
+  console.log('Your app is listening on port ' + listener.address().port)
 })
