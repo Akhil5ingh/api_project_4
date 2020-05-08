@@ -1,18 +1,16 @@
-// grab the things we need
-var mongoose = require('mongoose');
-var Schema = mongoose.Schema;
+const mongoose = require('mongoose');
 
-// create a schema
-var exerciseSchema = new Schema({
-  "description":{type: String},
-  "duration":{type:Number},
-  "date":{type: Date}
+const Schema = mongoose.Schema;
+
+const exerciseSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, required: true },
+  description: { type: String, required: true },
+  duration: { type: Number, required: true },
+  date: { type: Date, required: true },
+}, {
+  timestamps: true,
 });
 
-// the schema is useless so far
-// we need to create a model using it
-var Exercise = mongoose.model('Exercise',exerciseSchema);
+const Exercise = mongoose.model('Exercise', exerciseSchema);
 
-// make this available to our users in our Node applications
 module.exports = Exercise;
-// {"username":"hinanana","description":"testing","duration":5,"_id":"B1F2pmFwV","date":"Fri Mar 15 2019"}
